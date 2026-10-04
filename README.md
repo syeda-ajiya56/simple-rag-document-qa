@@ -345,3 +345,152 @@ This project demonstrates the complete basic RAG workflow:
 It shows how embeddings can connect a user's natural-language question with semantically related information in a vector database, and how that retrieved information can then be supplied to a language model to generate a grounded response.
 
 The unsupported-question test also demonstrates an important RAG principle: when the required information is not present in the available knowledge base, the system should avoid making up an answer.
+
+## Evaluation and Guardrails
+
+This project was extended with a basic evaluation process and a retrieval-based guardrail to make the RAG system more reliable when information is missing from the knowledge base.
+
+### Why Evaluation Matters
+
+A generative AI application can produce an answer even when the required information is not available. This can lead to hallucinations, where the model generates information that is unsupported by the available evidence.
+
+Evaluation provides a repeatable way to test whether the application behaves as expected after changing the prompt, model, retrieval system, or guardrails.
+
+### Guardrails Implemented
+
+The evaluation version of the application uses two complementary guardrails.
+
+#### 1. Retrieval-distance guardrail
+
+The system checks the distance of the best retrieved knowledge chunk.
+
+If the best retrieval distance is greater than `0.70`, the system does not send the question to Gemini and instead returns:
+
+```text
+I don't have enough information in the knowledge base to answer that question.
+```
+
+This prevents clearly unrelated questions from being passed to the language model.
+
+#### 2. Context-only generation rule
+
+When the retrieved context is sufficiently relevant, Gemini receives an explicit instruction to answer only from the retrieved context.
+
+The system instructs the model not to:
+
+* Invent information
+* Assume missing details
+* Estimate values that are not provided
+* Add facts that are not present in the knowledge base
+
+If the requested information is not fully supported by the context, the model is instructed to return the same safe fallback message.
+
+### Evaluation Dataset
+
+The evaluation contains 7 test questions covering three categories:
+
+| Category | Tests | Purpose |
+|---|---:|---|
+| Supported | 3 | Verify that known information is answered correctly |
+| Partially supported | 2 | Verify that missing details are not invented |
+| Unsupported | 2 | Verify that completely unavailable information is rejected |
+| **Total** | **7** | **Full evaluation set** |
+
+The evaluation cases include questions about undergraduate programs, library resources, internship support, scholarship amounts, accommodation costs, tuition fees, and university rankings.
+
+### Evaluation Results
+
+The final evaluation produced the following result:
+
+```text
+Total tests: 7
+Passed: 7
+Failed: 0
+Evaluation score: 100.0%
+Overall result: PASS
+```
+
+The observed best retrieval distances were:
+
+| Test type | Observed distance range |
+|---|---:|
+| Supported | 0.3422 – 0.5021 |
+| Partially supported | 0.4202 – 0.5879 |
+| Unsupported | 0.7877 – 0.9197 |
+
+The two completely unsupported questions exceeded the `0.70` retrieval-distance threshold and were rejected by the retrieval guardrail.
+
+The partially supported questions were semantically related to existing knowledge, but the requested details (scholarship amount and accommodation cost) were not present. The system correctly refused to invent those missing values.
+
+### Before vs After
+
+A baseline evaluation was also performed before adding the new retrieval-distance guardrail.
+
+The baseline produced acceptable behavior for the five initial test questions. In particular, it did not invent tuition fees or a university ranking; it stated that the information was unavailable.
+
+The improvement therefore does not claim that the baseline hallucinated on those specific tests. Instead, the guardrail makes the application's refusal behavior more explicit and enforceable by checking retrieval relevance before calling the language model and by restricting generation to retrieved context.
+
+| Behavior | Before | After |
+|---|---|---|
+| Supported questions | Answered from retrieved context | Answered from retrieved context |
+| Missing details | Model indicated information was unavailable in tested cases | Explicit safe fallback |
+| Completely unsupported questions | Model indicated information was unavailable in tested cases | Retrieval guardrail blocks generation |
+| Context restriction | Prompt-based | Retrieval check + context-only prompt |
+| Repeatable evaluation | Manual tests | 7-case evaluation dataset |
+| Final evaluation | Baseline observed | **7/7 PASS (100%)** |
+
+### Running the Evaluation
+
+The evaluation can be run with:
+
+```powershell
+python evaluate.py
+```
+
+The baseline behavior can be tested with:
+
+```powershell
+python baseline.py
+```
+
+The normal RAG application remains available through:
+
+```powershell
+python rag_qa.py
+```
+
+### Evaluation Limitations
+
+This evaluation is intentionally small and educational.
+
+The current evaluation has several limitations:
+
+* Only 7 test questions are included.
+* The knowledge base contains fictional university information.
+* The `0.70` retrieval-distance threshold was selected based on the observed distance separation in this small dataset.
+* Retrieval distance is not a perfect measure of whether an answer is factually supported.
+* The evaluation checks expected behavior rather than performing a full semantic comparison of every generated answer.
+* A larger production system would require a more diverse evaluation dataset, regression tests, human review, and additional safety checks.
+* API rate limits can temporarily affect repeated evaluation runs when using a free-tier model.
+
+### Files Added for Evaluation
+
+The project now includes:
+
+```text
+rag_qa.py
+baseline.py
+evaluate.py
+```
+
+`rag_qa.py` is the original interactive RAG application.
+
+`baseline.py` provides a simple before-guardrail comparison.
+
+`evaluate.py` runs the repeatable 7-question evaluation and tests the new guardrail behavior.
+
+### AI Work Disclosure
+
+AI assistance was used during development to help reason about evaluation design, guardrail implementation, test cases, and documentation.
+
+The final implementation was tested locally against the project's knowledge base, and the reported evaluation results are based on actual runs of the application.
